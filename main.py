@@ -1,15 +1,22 @@
 import math
+import os
 import pygame
 from player import Player
-from graphics import draw_platform, draw_spike, draw_coin, draw_exit
+from graphics import draw_platform, draw_spike, draw_exit
 from sprites import load_sprites, draw_tecolote, load_coin, draw_satochi, draw_cadejo_anim
 from backgrounds import load_backgrounds
+from menu import load_menu_bg, run_menu
+from levels_menu import load_level_select_bg, run_level_select
+from difficulty_menu import run_difficulty
+import random
+from sound import load_audio, play, start_music
 
 TILE = 40
 WIDTH, HEIGHT = 960, 540
 OFFSET_Y = 100
 
-# Símbolos: # plataforma | ^ picos | $ satoshi | E salida | A Cipitío | B Siguanaba
+# Símbolos: # plataforma | ^ picos | x picos ocultos | c plataforma que cae
+#           $ satoshi | E salida | A Blanqui | B Darky
 LEVELS = [
     {
         "nombre": "Nivel 1: Primer paso",
@@ -18,8 +25,8 @@ LEVELS = [
             "", "", "", "", "", "",
             "........$$$",
             "........####",
-            "AB....$.........$$$...E..",
-            "###########^^############",
+            "AB....$.........$....E..",
+            "########################",
         ],
     },
     {
@@ -39,12 +46,12 @@ LEVELS = [
         "mapa": [
             "", "", "",
             "...................E",
-            "...................###",
-            "................###.",
+            "..................###",
+            "...............###",
             ".........$$$###",
             ".........###",
             "A.B...###",
-            "##########^^^^^^^^^^^^^^#####",
+            "########################",
         ],
     },
     {
@@ -80,7 +87,7 @@ LEVELS = [
             "......................##",
             "...................###..",
             "...............###......",
-            "........$$..###..........",
+            "...........###..........",
             ".......###..............",
             "AB.###..................",
             "########################",
@@ -136,7 +143,6 @@ LEVELS = [
             "AB",
             "####^^^^###^^^##^^^^####",
         ],
-        
     },
     {
         "nombre": "Nivel 11: Suelo traicionero",
@@ -221,40 +227,37 @@ LEVELS = [
             "###ccxxccxxccxxccxxccxxcc",
         ],
     },
-    
 ]
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("SAlVACORE")
+pygame.display.set_caption("SALVACORE")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 36)
 small = pygame.font.SysFont(None, 28)
+
 SPRITES = load_sprites()
 COIN_IMG = load_coin()
 FONDOS = load_backgrounds()
+load_audio()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DIALOGO_BG = pygame.transform.smoothscale(
+    pygame.image.load(os.path.join(BASE_DIR, "assets", "dialogo.png")).convert(),
+    (WIDTH, HEIGHT))
+WIN_BG = pygame.transform.smoothscale(
+    pygame.image.load(os.path.join(BASE_DIR, "assets", "nivel_completado.png")).convert(),
+    (WIDTH, HEIGHT))
+
+DIALOG_PANEL = pygame.Rect(100, 322, 753, 95)
+text_font = pygame.font.Font(None, 32)
+TYPE_SPEED = 0.6
+CLICK_FRAMES = 18
+
 
 def quit_game():
     pygame.quit()
     raise SystemExit
-
-
-def show_dialogo(lineas):
-    for linea in lineas:
-        esperando = True
-        while esperando:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    quit_game()
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                    esperando = False
-            screen.fill((20, 20, 40))
-            draw_tecolote(screen, WIDTH // 2, 130, SPRITES["tecolote"])
-            screen.blit(font.render(linea, True, (255, 255, 255)), (40, HEIGHT // 2))
-            screen.blit(small.render("ENTER para continuar", True, (150, 150, 150)),
-                        (40, HEIGHT // 2 + 50))
-            pygame.display.flip()
-            clock.tick(30)
 
 
 def make_falling(rect):
@@ -312,7 +315,90 @@ def is_dead(p, danger, lava_rect):
         return True
     return lava_rect is not None and p.rect.colliderect(lava_rect)
 
-def build_level(mapa):
+
+def wrap_text(text, font, max_w):
+    lines, cur = [], ""
+    for word in text.split():
+        test = (cur + " " + word).strip()
+        if font.size(test)[0] <= max_w:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def split_linea(linea):
+    if ":" in linea:
+        speaker, texto = linea.split(":", 1)
+        return speaker.strip(), texto.strip()
+    return "", linea.strip()
+
+
+def draw_dialog_frame(linea, n_chars):
+    screen.blit(DIALOGO_BG, (0, 0))
+    _, texto = split_linea(linea)
+    lines = wrap_text(texto, text_font, DIALOG_PANEL.w - 60)
+    line_h = 30
+    block_h = len(lines) * line_h
+    y = DIALOG_PANEL.centery - block_h // 2 - 8
+
+    count = 0
+    for ln in lines:
+        visible = ln[:max(0, n_chars - count)]
+        count += len(ln) + 1
+        if visible:
+            s = text_font.render(visible, True, (255, 255, 255))
+            screen.blit(s, (DIALOG_PANEL.left + 30, y))
+        y += line_h
+
+
+def show_dialogo(lineas):
+    for linea in lineas:
+        _, texto = split_linea(linea)
+        total_chars = len(texto)
+        n = 0.0
+        esperando = True
+        while esperando:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    quit_game()
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                    if int(n) < total_chars:
+                        n = total_chars
+                    else:
+                        esperando = False
+            if n < total_chars:
+                n += TYPE_SPEED
+            draw_dialog_frame(linea, int(n))
+            pygame.display.flip()
+            clock.tick(30)
+
+
+GAME_MODE = "normal"
+
+
+def troll_map(mapa, semilla):
+    rng = random.Random(semilla)
+    rows = [list(r) for r in mapa]
+    for y, fila in enumerate(rows):
+        for x, ch in enumerate(fila):
+            if x < 3 or x > len(fila) - 4:
+                continue
+            below = rows[y + 1][x] if y + 1 < len(rows) and x < len(rows[y + 1]) else "."
+            above = rows[y - 1][x] if y > 0 and x < len(rows[y - 1]) else "."
+            if ch == "." and below == "#" and above == "." and rng.random() < 0.12:
+                fila[x] = "x"
+            elif ch == "#" and above == "." and rng.random() < 0.08:
+                fila[x] = "c"
+    return ["".join(r) for r in rows]
+
+
+def build_level(mapa, nombre=""):
+    if GAME_MODE == "bitcoiner":
+        mapa = troll_map(mapa, sum(map(ord, nombre)))
     platforms, coins, spikes, hidden, falling = [], [], [], [], []
     players, exit_rect = [], None
     for row, line in enumerate(mapa):
@@ -340,8 +426,9 @@ def build_level(mapa):
                 players.append(p)
     return platforms, coins, spikes, hidden, falling, players, exit_rect
 
+
 def play_level(nivel, total, fondo):
-    platforms, coins, spikes, hidden, falling, players, exit_rect = build_level(nivel["mapa"])
+    platforms, coins, spikes, hidden, falling, players, exit_rect = build_level(nivel["mapa"], nivel["nombre"])
     es_lava = nivel.get("lava", False)
     lava_y = float(HEIGHT)
     danger = spikes + hidden
@@ -360,7 +447,7 @@ def play_level(nivel, total, fondo):
         lava_rect = None
         if es_lava:
             if not won and lava_y > nivel["lava_limit"]:
-                lava_y = max(nivel["lava_limit"], lava_y - 0.15)
+                lava_y = max(nivel["lava_limit"], lava_y - (0.25 if GAME_MODE == "bitcoiner" else 0.15))
             lava_rect = pygame.Rect(0, int(lava_y), WIDTH, HEIGHT)
 
         if not won:
@@ -381,15 +468,23 @@ def play_level(nivel, total, fondo):
                         else:
                             p.respawn()
                     continue
+                was_ground = p.on_ground
                 p.update(solid)
+                if was_ground and not p.on_ground and p.vel_y < 0:
+                    play("jump", 0.6)
+                if p.moving and p.on_ground and t % 14 == 0:
+                    play("step", 0.35)
                 if is_dead(p, danger, lava_rect):
                     p.kill(by_lava=lava_rect is not None and p.rect.colliderect(lava_rect))
+                    play("death", 0.7)
                 for c in coins[:]:
                     if p.rect.colliderect(c):
                         coins.remove(c)
                         score += 1
+                        play("coin", 0.6)
             if all(p.rect.colliderect(exit_rect) for p in players):
                 won = True
+                play("howl", 0.9)
                 for p in players:
                     p.howl = True
                     p.moving = False
@@ -410,25 +505,58 @@ def play_level(nivel, total, fondo):
         for p in players:
             draw_cadejo_anim(screen, p, t)
 
-        screen.blit(font.render(f"Satoshis: {total + score}", True, (255, 255, 255)), (10, 10))
-        screen.blit(small.render(nivel["nombre"], True, (200, 200, 200)), (WIDTH - 340, 14))
         if won:
-            screen.blit(font.render("¡Nivel completado!", True, (255, 255, 255)),
-                        (WIDTH // 2 - 130, HEIGHT // 2 + 20))
-            screen.blit(small.render("ENTER para seguir", True, (150, 150, 150)),
-                        (WIDTH // 2 - 90, HEIGHT // 2 + 60))
-            draw_tecolote(screen, WIDTH // 2, 130, SPRITES["tecolote"])
+            screen.blit(WIN_BG, (0, 0))
+            hud = small.render(f"Satoshis: {total + score}", True, (255, 220, 80))
+            screen.blit(hud, (20, 20))
+        else:
+            screen.blit(font.render(f"Satoshis: {total + score}", True, (255, 255, 255)), (10, 10))
+            screen.blit(small.render(nivel["nombre"], True, (200, 200, 200)), (WIDTH - 340, 14))
+
         pygame.display.flip()
         clock.tick(60)
 
+
 def main():
-    show_dialogo([
-        "Don Tecolote: ¡Parece que estás en apuros!",
-        "Don Tecolote: La patria te necesita.",
-        "Controles: Blanqui W A D  |  Darky flechas",
-    ])
+    global GAME_MODE
+    start_music()
+    menu_bg = load_menu_bg((WIDTH, HEIGHT))
+    menu_bg = load_menu_bg((WIDTH, HEIGHT))
+    level_bg = load_level_select_bg((WIDTH, HEIGHT))
+    inicio = 0
+
+    while True:
+        accion = run_menu(screen, clock, menu_bg, font, quit_game)
+        if accion == "start":
+            inicio = 0
+            break
+        if accion == "levels":
+            elegido = run_level_select(screen, clock, level_bg, quit_game)
+            if elegido is not None:
+                inicio = elegido
+                break
+        if accion == "difficulty":
+            modo = run_difficulty(screen, clock, menu_bg, quit_game)
+            if modo:
+                GAME_MODE = modo
+                nombre = "Bitcoiner" if modo == "bitcoiner" else "Normal"
+                show_dialogo([
+                    f"Modo elegido: {nombre}",
+                    "Ahora pulsa Iniciar juego.",
+                ])
+
     total = 0
-    for i, nivel in enumerate(LEVELS):
+    if inicio == 0:
+        intro = [
+            "¡Parece que estás en apuros!",
+            "La patria te necesita.",
+            "Controles: Blanqui W A D  |  Darky flechas",
+        ]
+        if GAME_MODE == "bitcoiner":
+            intro.append("Modo Bitcoiner: prepárate para los trolleos.")
+        show_dialogo(intro)
+    for i in range(inicio, len(LEVELS)):
+        nivel = LEVELS[i]
         show_dialogo(nivel["dialogo"])
         total += play_level(nivel, total, FONDOS[i % len(FONDOS)])
     show_dialogo([
@@ -437,7 +565,5 @@ def main():
     ])
     pygame.quit()
 
-
 if __name__ == "__main__":
     main()
-
