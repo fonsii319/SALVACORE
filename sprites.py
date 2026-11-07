@@ -7,6 +7,7 @@ ASSETS = os.path.join(os.path.dirname(__file__), "assets")
 TRIO_PATH = os.path.join(ASSETS, "trio.png")
 COIN_PATH = os.path.join(ASSETS, "satochi.png")
 CADEJOS_PATH = os.path.join(ASSETS, "cadejos.png")
+EXIT_PATH = os.path.join(ASSETS, "salida.png")
 
 TECOLOTE_REGION = (1080, 118, 415, 632)
 CADEJO_SCALE = 0.5
@@ -144,3 +145,33 @@ def draw_cadejo_anim(surf, p, t):
 
     if p.howl:
         draw_howl(surf, pos, p.facing, t)
+
+        EXIT_PATH = os.path.join(ASSETS, "salida.png")
+
+
+def load_exit(h=72):
+    img = pygame.image.load(EXIT_PATH).convert_alpha()
+    W, H = img.get_size()
+    # Zona de la puerta dorada dentro de salida.png
+    x0, y0 = int(W * 0.325), int(H * 0.135)
+    w, hh = int(W * 0.35), int(H * 0.72)
+    crop = pygame.Surface((w, hh), pygame.SRCALPHA)
+    crop.blit(img, (0, 0), pygame.Rect(x0, y0, w, hh))
+    crop = _remove_bg(crop, tol=20)
+    box = crop.get_bounding_rect()
+    crop = crop.subsurface(box).copy()
+    sw = round(crop.get_width() * h / crop.get_height())
+    return pygame.transform.smoothscale(crop, (sw, h))
+
+
+def draw_portal(surf, rect, img, t):
+    pulso = 0.5 + 0.5 * math.sin(t / 12)
+    glow = pygame.Surface((img.get_width() + 40, img.get_height() + 30), pygame.SRCALPHA)
+    pygame.draw.ellipse(glow, (255, 190, 40, int(40 + 50 * pulso)), glow.get_rect())
+    pygame.draw.ellipse(glow, (255, 230, 120, int(25 + 30 * pulso)),
+                        glow.get_rect().inflate(-16, -12))
+    pos = img.get_rect(midbottom=(rect.centerx, rect.bottom + 4))
+    surf.blit(glow, glow.get_rect(center=(pos.centerx, pos.centery + 4)))
+    surf.blit(img, pos)
+
+    

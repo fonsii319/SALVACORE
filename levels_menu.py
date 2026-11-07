@@ -6,7 +6,7 @@ ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 SRC_W, SRC_H = 1024, 576        # tamaño de la imagen original
 CLICK_FRAMES = 18
 TOTAL_LEVELS = 24
-PLAYABLE = 15                   # niveles jugables por ahora
+PLAYABLE = 24                   # niveles jugables por ahora
 
 # Centros de los botones en la imagen original (1024 x 576)
 COLS = [320, 448, 580, 708]

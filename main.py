@@ -5,13 +5,13 @@ import sys
 import pygame
 from player import Player
 from graphics import draw_platform, draw_spike, draw_exit
-from sprites import load_sprites, draw_tecolote, load_coin, draw_satochi, draw_cadejo_anim
+from sprites import load_sprites, draw_tecolote, load_coin, draw_satochi, draw_cadejo_anim, load_exit, draw_portal
 from backgrounds import load_backgrounds
-from menu import load_menu_bg, run_menu
 from levels_menu import load_level_select_bg, run_level_select
 from difficulty_menu import run_difficulty
 from sound import load_audio, play, start_music
 from controller_server import start_server, get_input, connected, local_ip
+from menu import load_menu_bg, run_menu
 
 TILE = 40
 WIDTH, HEIGHT = 960, 540
@@ -229,6 +229,155 @@ LEVELS = [
             "###ccxxccxxccxxccxxccxxcc",
         ],
     },
+    {  
+        "nombre": "Nivel 16: Piso mentiroso",
+        "dialogo": ["Don Tecolote: El piso no siempre es piso."],
+        "mapa": [
+            "........................",
+            "....................E...",
+            "...................###..",
+            "...............####.....",
+            "........................",
+            "........####............",
+            "........................",
+            "...###..................",
+            "AB.....$.........$......",
+            "######x######c##########",
+        ],
+    },
+    {
+        "nombre": "Nivel 17: Monedas traicioneras",
+        "dialogo": ["Don Tecolote: Cada moneda tiene su precio."],
+        "mapa": [
+            "........................",
+            "......................E.",
+            "....................###.",
+            "................###.....",
+            "........................",
+            "............###.........",
+            "........###.............",
+            "....###.................",
+            "AB$.....$........$......",
+            "##x######c##############",
+        ],
+    },
+    {
+        "nombre": "Nivel 18: Torre engañosa",
+        "dialogo": ["Don Tecolote: Cada escalón tiene su trampa."],
+        "mapa": [
+            "........................",
+            "....................E...",
+            "...................###..",
+            "................c##.....",
+            "........................",
+            "...........x###.........",
+            "........................",
+            "......###...............",
+            "AB....$.........$......",
+            "#####^^^^^##x#####c#####",
+        ],
+    },
+    {
+        "nombre": "Nivel 19: Lava en ascenso",
+        "dialogo": ["Don Tecolote: La lava sube. Sube más rápido o muere."],
+        "lava": True,
+        "lava_limit": 380,
+        "mapa": [
+            "........................",
+            "......................E.",
+            "....................###.",
+            "................###.....",
+            "...............x........",
+            "............###.........",
+            "........###.............",
+            "....###.................",
+            "AB....$.........x......",
+            "######x######x#########",
+        ],
+    },
+    {
+        "nombre": "Nivel 20: Espinas del Cadejo",
+        "dialogo": ["Don Tecolote: Los picos esconden más de lo que ves."],
+        "mapa": [
+            "........................",
+            "....................E...",
+            "...................###..",
+            "...............###.....",
+            "........................",
+            "..........###..........",
+            "........................",
+            "......###...............",
+            "AB...$...x.....$.......",
+            "####^^####^^####x#####^#",
+        ],
+    },
+    {
+        "nombre": "Nivel 21: Escalera de trampas",
+        "dialogo": ["Don Tecolote: Cada escalón puede desaparecer."],
+        "mapa": [
+            "........................",
+            "......................E.",
+            "....................###.",
+            "................ccc.....",
+            "........................",
+            "............###.........",
+            "........................",
+            "........###.............",
+            "....###.................",
+            "AB...$...........$......",
+            "##x#####c###x###########",
+        ],
+    },
+    {
+        "nombre": "Nivel 22: Doble trampa",
+        "dialogo": ["Don Tecolote: Dos trampas en una sola escalera."],
+        "mapa": [
+            "........................",
+            "....................E...",
+            "...................###..",
+            "...............###.....",
+            "..............x.........",
+            "...........###.........",
+            "........................",
+            "......###...............",
+            "AB....x...........$.....",
+            "#####^^##x###^###^######",
+        ],
+    },
+    {
+        "nombre": "Nivel 23: Suelo ardiente",
+        "dialogo": ["Don Tecolote: Cuidado, el suelo arde."],
+        "lava": True,
+        "lava_limit": 360,
+        "mapa": [
+            "........................",
+            "......................E.",
+            "....................###.",
+            "................###.....",
+            "........................",
+            "............###.........",
+            "........###.............",
+            "....###..........^......",
+            "AB....$...........$.....",
+            "######^##^####x#########",
+        ],
+    },
+    {
+        "nombre": "Nivel 24: Bóveda de satoshis",
+        "dialogo": ["Don Tecolote: Ya no hay vuelta atrás."],
+        "mapa": [
+            "........................",
+            "..................E.....",
+            "................###....",
+            "........................",
+            "..........###...........",
+            "........................",
+            "........c##.............",
+            "....###.................",
+            "AB....$.......$........",
+            "##x#####^##x##c##x######",
+        ],
+    },
 ]
 
 pygame.init()
@@ -240,6 +389,7 @@ small = pygame.font.SysFont(None, 28)
 
 SPRITES = load_sprites()
 COIN_IMG = load_coin()
+EXIT_IMG = load_exit()
 FONDOS = load_backgrounds()
 load_audio()
 
@@ -606,7 +756,7 @@ def play_level(nivel, total, fondo, idx=0, net=None):
         for ci, c in enumerate(coins):
             if ci not in gone:
                 draw_satochi(screen, c, COIN_IMG, t)
-        draw_exit(screen, exit_rect, t)
+        draw_portal(screen, exit_rect, EXIT_IMG, t)        
         if lava_rect is not None:
             draw_lava(screen, int(lava_y), t)
         for p in players:
