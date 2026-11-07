@@ -10,6 +10,7 @@ BUTTONS = [
     ("levels", pygame.Rect(320, 358, 320, 64)),
     ("difficulty", pygame.Rect(320, 434, 320, 64)),
 ]
+PHONE_BTN = pygame.Rect(670, 478, 270, 44)
 CLICK_FRAMES = 18
 
 
@@ -23,7 +24,6 @@ def _draw_button(screen, bg, rect, h, t, clicked, click_t):
     if clicked:
         scale = 1.07 + 0.05 * min(1, click_t / CLICK_FRAMES)
 
-    # Halo dorado pulsante
     if h > 0.02:
         pad_x, pad_y = 16, 12
         glow = pygame.Surface((rect.w + pad_x * 2, rect.h + pad_y * 2), pygame.SRCALPHA)
@@ -32,13 +32,11 @@ def _draw_button(screen, bg, rect, h, t, clicked, click_t):
                          glow.get_rect().inflate(-4, -4), 3, border_radius=12)
         screen.blit(glow, (rect.x - pad_x, rect.y - pad_y))
 
-    # Botón ampliado: copia del arte cubriendo el original
     if scale > 1.001:
         piece = bg.subsurface(rect).copy()
         big = pygame.transform.smoothscale(piece, (int(rect.w * scale), int(rect.h * scale)))
         screen.blit(big, big.get_rect(center=rect.center))
 
-    # Brillo que cruza el botón, o destello al hacer clic
     if h > 0.02 or clicked:
         shine = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
         if clicked:
@@ -52,9 +50,22 @@ def _draw_button(screen, bg, rect, h, t, clicked, click_t):
         screen.blit(shine, rect.topleft)
 
 
+def _draw_phone_btn(screen, font, rect, h):
+    grow = int(h * 8)
+    r = rect.inflate(grow, grow // 2)
+    base = (30, 140, 90) if h > 0.5 else (20, 90, 60)
+    border = (255, 220, 90) if h > 0.5 else (140, 140, 170)
+    pygame.draw.rect(screen, base, r, border_radius=12)
+    pygame.draw.rect(screen, border, r, 2, border_radius=12)
+    s = font.render("MANDO CON TELÉFONOS", True, (255, 255, 255))
+    screen.blit(s, s.get_rect(center=r.center))
+
+
 def run_menu(screen, clock, bg, font, quit_fn):
-    """Devuelve 'start', 'levels' o 'difficulty' según el botón elegido."""
+    """Devuelve 'start', 'levels', 'difficulty' o 'phones'."""
     hover = {name: 0.0 for name, _ in BUTTONS}
+    hover["phones"] = 0.0
+    phone_font = pygame.font.Font(None, 28)
     clicked, click_t = None, 0
     t = 0
 
@@ -65,6 +76,8 @@ def run_menu(screen, clock, bg, font, quit_fn):
             if event.type == pygame.QUIT:
                 quit_fn()
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and clicked is None:
+                if PHONE_BTN.collidepoint(event.pos):
+                    return "phones"
                 for name, rect in BUTTONS:
                     if rect.collidepoint(event.pos):
                         clicked = name
@@ -79,6 +92,13 @@ def run_menu(screen, clock, bg, font, quit_fn):
             target = 1.0 if rect.collidepoint(mouse) else 0.0
             hover[name] += (target - hover[name]) * 0.25
             _draw_button(screen, bg, rect, hover[name], t, clicked == name, click_t)
+
+        target = 1.0 if PHONE_BTN.collidepoint(mouse) else 0.0
+        hover["phones"] += (target - hover["phones"]) * 0.25
+        _draw_phone_btn(screen, phone_font, PHONE_BTN, hover["phones"])
+
         pygame.display.flip()
         clock.tick(60)
         
+
+

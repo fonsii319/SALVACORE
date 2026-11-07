@@ -1,5 +1,7 @@
 import math
 import os
+import random
+import sys
 import pygame
 from player import Player
 from graphics import draw_platform, draw_spike, draw_exit
@@ -8,8 +10,8 @@ from backgrounds import load_backgrounds
 from menu import load_menu_bg, run_menu
 from levels_menu import load_level_select_bg, run_level_select
 from difficulty_menu import run_difficulty
-import random
 from sound import load_audio, play, start_music
+from controller_server import start_server, get_input, connected, local_ip
 
 TILE = 40
 WIDTH, HEIGHT = 960, 540
@@ -254,6 +256,9 @@ text_font = pygame.font.Font(None, 32)
 TYPE_SPEED = 0.6
 CLICK_FRAMES = 18
 
+GAME_MODE = "normal"
+PHONE_ON = False
+
 
 def quit_game():
     pygame.quit()
@@ -377,9 +382,6 @@ def show_dialogo(lineas):
             clock.tick(30)
 
 
-GAME_MODE = "normal"
-
-
 def troll_map(mapa, semilla):
     rng = random.Random(semilla)
     rows = [list(r) for r in mapa]
@@ -427,22 +429,107 @@ def build_level(mapa, nombre=""):
     return platforms, coins, spikes, hidden, falling, players, exit_rect
 
 
-def play_level(nivel, total, fondo):
+def pick_players(players, role):
+    blanqui = [p for p in players if p.color == (255, 200, 0)][0]
+    darky = [p for p in players if p.color == (0, 180, 255)][0]
+    return (blanqui, darky) if role == "A" else (darky, blanqui)
+
+
+def connect_online(host):
+    print("El modo en red no está disponible en esta versión.")
+    quit_game()
+    rol = {"A": "Blanqui", "B": "Darky"}
+    while not net.ready:
+        net.poll()
+        if net.full:
+            print("La partida ya tiene 2 jugadores.")
+            quit_game()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                quit_game()
+        screen.fill((20, 20, 40))
+        if net.role:
+            texto = f"Conectado como {rol[net.role]}. Esperando al otro jugador..."
+        else:
+            texto = "Conectando..."
+        s = font.render(texto, True, (255, 255, 255))
+        screen.blit(s, s.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
+        pygame.display.flip()
+        clock.tick(30)
+    return net
+
+
+def phone_input(p):
+    if not PHONE_ON:
+        return ()
+    return get_input("1" if p.color == (255, 200, 0) else "2")
+
+
+def phone_lobby(ip):
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                quit_game()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                return
+        screen.fill((15, 15, 40))
+        lineas = [
+            ("Abre estos enlaces en los teléfonos (misma red Wi-Fi):", (255, 255, 255)),
+            (f"Blanqui:  http://{ip}:8000/p1", (120, 200, 255)),
+            (f"Darky:    http://{ip}:8000/p2", (190, 130, 255)),
+            ("", (0, 0, 0)),
+            (f"Blanqui: {'CONECTADO' if connected('1') else 'esperando...'}", (255, 220, 80)),
+            (f"Darky: {'CONECTADO' if connected('2') else 'esperando...'}", (255, 220, 80)),
+            ("", (0, 0, 0)),
+            ("Pulsa ENTER en la PC para empezar", (180, 180, 180)),
+        ]
+        y = 120
+        for texto, color in lineas:
+            if texto:
+                s = font.render(texto, True, color)
+                screen.blit(s, s.get_rect(center=(WIDTH // 2, y)))
+            y += 40
+        pygame.display.flip()
+        clock.tick(30)
+
+
+def play_level(nivel, total, fondo, idx=0, net=None):
     platforms, coins, spikes, hidden, falling, players, exit_rect = build_level(nivel["mapa"], nivel["nombre"])
     es_lava = nivel.get("lava", False)
     lava_y = float(HEIGHT)
     danger = spikes + hidden
     score = 0
+    taken = set()
     won = False
+    sent_won = False
     t = 0
+    local = remote = None
+    if net:
+        local, remote = pick_players(players, net.role)
+    active = [local] if net else players
 
     while True:
         t += 1
+        if net:
+            net.poll()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 quit_game()
             if won and event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                return score
+                if net is None or net.remote_won >= idx:
+                    return score
+
+        gone = set(taken)
+        if net:
+            gone |= {ci for lv, ci in net.remote_coins if lv == idx}
+            s = net.remote_state
+            if s and s.get("level") == idx:
+                remote.rect.topleft = (s["x"], s["y"])
+                remote.facing = s["facing"]
+                remote.anim = s["anim"]
+                remote.dying = s["dying"]
+                remote.howl = s["howl"]
+                remote.moving = s["moving"]
 
         lava_rect = None
         if es_lava:
@@ -455,13 +542,13 @@ def play_level(nivel, total, fondo):
                 update_falling(f, players)
             solid = platforms + [f["rect"] for f in falling
                                  if f["estado"] in ("firme", "tiembla")]
-            for p in players:
+            for p in active:
                 if p.dying:
                     p.dying -= 1
                     if p.dying == 0:
                         if p.death_by_lava:
                             lava_y = float(HEIGHT)
-                            for q in players:
+                            for q in active:
                                 q.respawn()
                             for f in falling:
                                 reset_falling(f)
@@ -469,7 +556,7 @@ def play_level(nivel, total, fondo):
                             p.respawn()
                     continue
                 was_ground = p.on_ground
-                p.update(solid)
+                p.update(solid, phone_input(p))
                 if was_ground and not p.on_ground and p.vel_y < 0:
                     play("jump", 0.6)
                 if p.moving and p.on_ground and t % 14 == 0:
@@ -477,12 +564,19 @@ def play_level(nivel, total, fondo):
                 if is_dead(p, danger, lava_rect):
                     p.kill(by_lava=lava_rect is not None and p.rect.colliderect(lava_rect))
                     play("death", 0.7)
-                for c in coins[:]:
-                    if p.rect.colliderect(c):
-                        coins.remove(c)
+                for ci, c in enumerate(coins):
+                    if ci not in gone and p.rect.colliderect(c):
+                        taken.add(ci)
+                        gone.add(ci)
                         score += 1
                         play("coin", 0.6)
-            if all(p.rect.colliderect(exit_rect) for p in players):
+                        if net:
+                            net.send({"type": "coin", "level": idx, "i": ci})
+            if net:
+                ready = local.rect.colliderect(exit_rect) and remote.rect.colliderect(exit_rect)
+            else:
+                ready = all(p.rect.colliderect(exit_rect) for p in players)
+            if ready:
                 won = True
                 play("howl", 0.9)
                 for p in players:
@@ -490,15 +584,28 @@ def play_level(nivel, total, fondo):
                     p.moving = False
                     p.anim = "idle"
 
+        if net:
+            net.send({
+                "type": "state", "level": idx,
+                "x": local.rect.x, "y": local.rect.y,
+                "facing": local.facing, "anim": local.anim,
+                "dying": local.dying, "howl": local.howl,
+                "moving": local.moving,
+            })
+            if won and not sent_won:
+                net.send({"type": "won", "level": idx})
+                sent_won = True
+
         screen.blit(fondo, (0, 0))
         for r in platforms:
             draw_platform(screen, r)
         for f in falling:
             draw_falling(screen, f, t)
-        for s in spikes:
-            draw_spike(screen, s)
-        for c in coins:
-            draw_satochi(screen, c, COIN_IMG, t)
+        for s_ in spikes:
+            draw_spike(screen, s_)
+        for ci, c in enumerate(coins):
+            if ci not in gone:
+                draw_satochi(screen, c, COIN_IMG, t)
         draw_exit(screen, exit_rect, t)
         if lava_rect is not None:
             draw_lava(screen, int(lava_y), t)
@@ -509,6 +616,9 @@ def play_level(nivel, total, fondo):
             screen.blit(WIN_BG, (0, 0))
             hud = small.render(f"Satoshis: {total + score}", True, (255, 220, 80))
             screen.blit(hud, (20, 20))
+            if net and net.remote_won < idx:
+                aviso = small.render("Esperando al otro jugador...", True, (255, 255, 255))
+                screen.blit(aviso, aviso.get_rect(center=(WIDTH // 2, HEIGHT - 40)))
         else:
             screen.blit(font.render(f"Satoshis: {total + score}", True, (255, 255, 255)), (10, 10))
             screen.blit(small.render(nivel["nombre"], True, (200, 200, 200)), (WIDTH - 340, 14))
@@ -518,32 +628,41 @@ def play_level(nivel, total, fondo):
 
 
 def main():
-    global GAME_MODE
+    global GAME_MODE, PHONE_ON
     start_music()
-    menu_bg = load_menu_bg((WIDTH, HEIGHT))
-    menu_bg = load_menu_bg((WIDTH, HEIGHT))
-    level_bg = load_level_select_bg((WIDTH, HEIGHT))
-    inicio = 0
+    net = None
 
-    while True:
-        accion = run_menu(screen, clock, menu_bg, font, quit_game)
-        if accion == "start":
-            inicio = 0
-            break
-        if accion == "levels":
-            elegido = run_level_select(screen, clock, level_bg, quit_game)
-            if elegido is not None:
-                inicio = elegido
+    inicio = 0
+    if "--phones" in sys.argv:
+        start_server()
+        PHONE_ON = True
+        phone_lobby(local_ip())
+    else:
+        menu_bg = load_menu_bg((WIDTH, HEIGHT))
+        level_bg = load_level_select_bg((WIDTH, HEIGHT))
+        while net is None:
+            accion = run_menu(screen, clock, menu_bg, font, quit_game)
+            if accion == "start":
                 break
-        if accion == "difficulty":
-            modo = run_difficulty(screen, clock, menu_bg, quit_game)
-            if modo:
-                GAME_MODE = modo
-                nombre = "Bitcoiner" if modo == "bitcoiner" else "Normal"
-                show_dialogo([
-                    f"Modo elegido: {nombre}",
-                    "Ahora pulsa Iniciar juego.",
-                ])
+            if accion == "phones":
+                start_server()
+                PHONE_ON = True
+                phone_lobby(local_ip())
+                break
+            if accion == "levels":
+                elegido = run_level_select(screen, clock, level_bg, quit_game)
+                if elegido is not None:
+                    inicio = elegido
+                    break
+            if accion == "difficulty":
+                modo = run_difficulty(screen, clock, menu_bg, quit_game)
+                if modo:
+                    GAME_MODE = modo
+                    nombre = "Bitcoiner" if modo == "bitcoiner" else "Normal"
+                    show_dialogo([
+                        f"Modo elegido: {nombre}",
+                        "Ahora pulsa Iniciar juego.",
+                    ])
 
     total = 0
     if inicio == 0:
@@ -558,7 +677,7 @@ def main():
     for i in range(inicio, len(LEVELS)):
         nivel = LEVELS[i]
         show_dialogo(nivel["dialogo"])
-        total += play_level(nivel, total, FONDOS[i % len(FONDOS)])
+        total += play_level(nivel, total, FONDOS[i % len(FONDOS)], idx=i, net=net)
     show_dialogo([
         "Don Tecolote: ¡Libertad! El Salvador escapó del fiat.",
         f"Satoshis totales: {total}",
@@ -567,3 +686,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

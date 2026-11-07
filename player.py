@@ -14,7 +14,7 @@ class Player:
         self.start = (x, y)
         self.color = color
         self.keys = keys  # (izquierda, derecha, saltar)
-        self.sprite = None  # se asigna en build_level
+        self.sprite = None
         self.vel_y = 0
         self.on_ground = False
         self.facing = 1
@@ -39,15 +39,15 @@ class Player:
         self.death_by_lava = False
         self.anim = "idle"
 
-    def update(self, platforms):
+    def update(self, platforms, extra=()):
         left, right, up = self.keys
         pressed = pygame.key.get_pressed()
         dx = 0
-        if pressed[left]:
+        if pressed[left] or "left" in extra:
             dx -= SPEED
-        if pressed[right]:
+        if pressed[right] or "right" in extra:
             dx += SPEED
-        if pressed[up] and self.on_ground:
+        if (pressed[up] or "jump" in extra) and self.on_ground:
             self.vel_y = JUMP
         self.vel_y += GRAVITY
 
@@ -80,3 +80,4 @@ class Player:
             self.anim = "walk"
         else:
             self.anim = "idle"
+            
