@@ -3,6 +3,8 @@ import pygame
 GRAVITY = 0.6
 JUMP = -12
 SPEED = 5
+DEATH_FRAMES = 45
+
 
 class Player:
     def __init__(self, x, y, color, keys):
@@ -12,12 +14,30 @@ class Player:
         self.start = (x, y)
         self.color = color
         self.keys = keys  # (izquierda, derecha, saltar)
+        self.sprite = None  # se asigna en build_level
         self.vel_y = 0
         self.on_ground = False
+        self.facing = 1
+        self.moving = False
+        self.anim = "idle"
+        self.howl = False
+        self.dying = 0
+        self.death_total = DEATH_FRAMES
+        self.death_by_lava = False
+
+    def kill(self, by_lava=False):
+        if not self.dying:
+            self.dying = self.death_total
+            self.death_by_lava = by_lava
+            self.vel_y = 0
+            self.anim = "die"
 
     def respawn(self):
         self.rect.topleft = self.start
         self.vel_y = 0
+        self.dying = 0
+        self.death_by_lava = False
+        self.anim = "idle"
 
     def update(self, platforms):
         left, right, up = self.keys
@@ -30,6 +50,10 @@ class Player:
         if pressed[up] and self.on_ground:
             self.vel_y = JUMP
         self.vel_y += GRAVITY
+
+        self.moving = dx != 0
+        if dx:
+            self.facing = 1 if dx > 0 else -1
 
         self.rect.x += dx
         for p in platforms:
@@ -49,3 +73,10 @@ class Player:
                 elif self.vel_y < 0:
                     self.rect.top = p.bottom
                 self.vel_y = 0
+
+        if not self.on_ground:
+            self.anim = "jump"
+        elif self.moving:
+            self.anim = "walk"
+        else:
+            self.anim = "idle"

@@ -2,7 +2,8 @@ import math
 import pygame
 from player import Player
 from graphics import draw_platform, draw_spike, draw_coin, draw_exit
-from sprites import load_sprites, draw_cadejo, draw_tecolote, load_coin, draw_satochi
+from sprites import load_sprites, draw_tecolote, load_coin, draw_satochi, draw_cadejo_anim
+from backgrounds import load_backgrounds
 
 TILE = 40
 WIDTH, HEIGHT = 960, 540
@@ -38,12 +39,12 @@ LEVELS = [
         "mapa": [
             "", "", "",
             "...................E",
-            "..................###",
-            "...............###",
+            "...................###",
+            "................###.",
             ".........$$$###",
             ".........###",
             "A.B...###",
-            "########################",
+            "##########^^^^^^^^^^^^^^#####",
         ],
     },
     {
@@ -231,6 +232,7 @@ font = pygame.font.SysFont(None, 36)
 small = pygame.font.SysFont(None, 28)
 SPRITES = load_sprites()
 COIN_IMG = load_coin()
+FONDOS = load_backgrounds()
 
 def quit_game():
     pygame.quit()
@@ -338,7 +340,7 @@ def build_level(mapa):
                 players.append(p)
     return platforms, coins, spikes, hidden, falling, players, exit_rect
 
-def play_level(nivel, total):
+def play_level(nivel, total, fondo):
     platforms, coins, spikes, hidden, falling, players, exit_rect = build_level(nivel["mapa"])
     es_lava = nivel.get("lava", False)
     lava_y = float(HEIGHT)
@@ -367,24 +369,33 @@ def play_level(nivel, total):
             solid = platforms + [f["rect"] for f in falling
                                  if f["estado"] in ("firme", "tiembla")]
             for p in players:
+                if p.dying:
+                    p.dying -= 1
+                    if p.dying == 0:
+                        if p.death_by_lava:
+                            lava_y = float(HEIGHT)
+                            for q in players:
+                                q.respawn()
+                            for f in falling:
+                                reset_falling(f)
+                        else:
+                            p.respawn()
+                    continue
                 p.update(solid)
                 if is_dead(p, danger, lava_rect):
-                    if lava_rect is not None and p.rect.colliderect(lava_rect):
-                        lava_y = float(HEIGHT)
-                        for q in players:
-                            q.respawn()
-                        for f in falling:
-                            reset_falling(f)
-                    else:
-                        p.respawn()
+                    p.kill(by_lava=lava_rect is not None and p.rect.colliderect(lava_rect))
                 for c in coins[:]:
                     if p.rect.colliderect(c):
                         coins.remove(c)
                         score += 1
             if all(p.rect.colliderect(exit_rect) for p in players):
                 won = True
+                for p in players:
+                    p.howl = True
+                    p.moving = False
+                    p.anim = "idle"
 
-        screen.fill((20, 20, 40))
+        screen.blit(fondo, (0, 0))
         for r in platforms:
             draw_platform(screen, r)
         for f in falling:
@@ -397,7 +408,7 @@ def play_level(nivel, total):
         if lava_rect is not None:
             draw_lava(screen, int(lava_y), t)
         for p in players:
-            draw_cadejo(screen, p.rect, p.sprite)
+            draw_cadejo_anim(screen, p, t)
 
         screen.blit(font.render(f"Satoshis: {total + score}", True, (255, 255, 255)), (10, 10))
         screen.blit(small.render(nivel["nombre"], True, (200, 200, 200)), (WIDTH - 340, 14))
@@ -406,6 +417,7 @@ def play_level(nivel, total):
                         (WIDTH // 2 - 130, HEIGHT // 2 + 20))
             screen.blit(small.render("ENTER para seguir", True, (150, 150, 150)),
                         (WIDTH // 2 - 90, HEIGHT // 2 + 60))
+            draw_tecolote(screen, WIDTH // 2, 130, SPRITES["tecolote"])
         pygame.display.flip()
         clock.tick(60)
 
@@ -416,9 +428,9 @@ def main():
         "Controles: Blanqui W A D  |  Darky flechas",
     ])
     total = 0
-    for nivel in LEVELS:
+    for i, nivel in enumerate(LEVELS):
         show_dialogo(nivel["dialogo"])
-        total += play_level(nivel, total)
+        total += play_level(nivel, total, FONDOS[i % len(FONDOS)])
     show_dialogo([
         "Don Tecolote: ¡Libertad! El Salvador escapó del fiat.",
         f"Satoshis totales: {total}",
